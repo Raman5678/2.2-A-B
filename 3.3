@@ -1,0 +1,386 @@
+// ===============================================================
+// MINI PROJECT: ONLINE STUDENT MANAGEMENT SYSTEM
+// SPRING + HIBERNATE  |  All code merged in one file
+// ===============================================================
+
+import org.springframework.context.annotation.*;
+import org.springframework.stereotype.*;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.annotation.Transactional;
+import org.hibernate.*;
+import org.hibernate.cfg.Configuration;
+import jakarta.persistence.*;
+import java.util.*;
+
+// ===============================================================
+// PART 1: ENTITIES (Student, Course, Payment)
+// ===============================================================
+
+@Entity
+@Table(name = "courses")
+class Course {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int courseId;
+
+    @Column
+    private String courseName;
+
+    @Column
+    private int duration; // weeks
+
+    public Course() {}
+    public Course(String courseName, int duration) {
+        this.courseName = courseName;
+        this.duration = duration;
+    }
+
+    // GETTERS & SETTERS
+    public int getCourseId() { return courseId; }
+    public String getCourseName() { return courseName; }
+    public int getDuration() { return duration; }
+    public void setCourseName(String courseName) { this.courseName = courseName; }
+    public void setDuration(int duration) { this.duration = duration; }
+
+    public String toString() {
+        return courseId + " | " + courseName + " | " + duration + " weeks";
+    }
+}
+
+@Entity
+@Table(name = "students")
+class Student {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int studentId;
+
+    @Column
+    private String name;
+
+    @ManyToOne
+    private Course course;
+
+    @Column
+    private double balance;
+
+    public Student() {}
+    public Student(String name, Course course, double balance) {
+        this.name = name;
+        this.course = course;
+        this.balance = balance;
+    }
+
+    // GETTERS & SETTERS
+    public int getStudentId() { return studentId; }
+    public String getName() { return name; }
+    public Course getCourse() { return course; }
+    public double getBalance() { return balance; }
+    public void setName(String name) { this.name = name; }
+    public void setCourse(Course course) { this.course = course; }
+    public void setBalance(double balance) { this.balance = balance; }
+
+    public String toString() {
+        return studentId + " | " + name + " | " + course.getCourseName() + " | ₹" + balance;
+    }
+}
+
+@Entity
+@Table(name = "payments")
+class Payment {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int paymentId;
+
+    @Column
+    private int studentId;
+
+    @Column
+    private double amount;
+
+    @Column
+    private Date date;
+
+    public Payment() {}
+    public Payment(int studentId, double amount) {
+        this.studentId = studentId;
+        this.amount = amount;
+        this.date = new Date();
+    }
+}
+
+
+// ===============================================================
+// PART 2: HIBERNATE UTILITY
+// ===============================================================
+
+class HibernateUtil {
+
+    private static final SessionFactory sf;
+
+    static {
+        sf = new Configuration()
+                .configure()  // Uses hibernate.cfg.xml
+                .addAnnotatedClass(Student.class)
+                .addAnnotatedClass(Course.class)
+                .addAnnotatedClass(Payment.class)
+                .buildSessionFactory();
+    }
+
+    public static SessionFactory getSessionFactory() {
+        return sf;
+    }
+}
+
+
+// ===============================================================
+// PART 3: DAO LAYER (StudentDAO, CourseDAO, PaymentDAO)
+// ===============================================================
+
+@Repository
+class StudentDAO {
+
+    public void save(Student s) {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        Transaction t = session.beginTransaction();
+        session.saveOrUpdate(s);
+        t.commit();
+        session.close();
+    }
+
+    public Student get(int id) {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        Student s = session.get(Student.class, id);
+        session.close();
+        return s;
+    }
+
+    public List<Student> getAll() {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        List<Student> list = session.createQuery("from Student", Student.class).list();
+        session.close();
+        return list;
+    }
+
+    public void delete(int id) {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        Transaction t = session.beginTransaction();
+        Student s = session.get(Student.class, id);
+        if (s != null) session.delete(s);
+        t.commit();
+        session.close();
+    }
+}
+
+@Repository
+class CourseDAO {
+
+    public void save(Course c) {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        Transaction t = s.beginTransaction();
+        s.saveOrUpdate(c);
+        t.commit();
+        s.close();
+    }
+
+    public Course get(int id) {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        Course c = s.get(Course.class, id);
+        s.close();
+        return c;
+    }
+
+    public List<Course> getAll() {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        List<Course> list = s.createQuery("from Course", Course.class).list();
+        s.close();
+        return list;
+    }
+}
+
+@Repository
+class PaymentDAO {
+
+    public void save(Payment p) {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        Transaction t = s.beginTransaction();
+        s.save(p);
+        t.commit();
+        s.close();
+    }
+}
+
+
+// ===============================================================
+// PART 4: SERVICE LAYER (with TRANSACTION MANAGEMENT)
+// ===============================================================
+
+@Service
+class FeeService {
+
+    private final StudentDAO studentDAO = new StudentDAO();
+    private final PaymentDAO paymentDAO = new PaymentDAO();
+
+    @Transactional
+    public void payFee(int studentId, double amount) {
+        Student s = studentDAO.get(studentId);
+
+        if (s == null) throw new RuntimeException("Student not found!");
+        if (s.getBalance() < amount) throw new RuntimeException("Insufficient Balance!");
+
+        s.setBalance(s.getBalance() - amount);
+        studentDAO.save(s);
+
+        Payment p = new Payment(studentId, amount);
+        paymentDAO.save(p);
+    }
+
+    @Transactional
+    public void refundFee(int studentId, double amount) {
+        Student s = studentDAO.get(studentId);
+
+        if (s == null) throw new RuntimeException("Student not found!");
+
+        s.setBalance(s.getBalance() + amount);
+        studentDAO.save(s);
+
+        Payment p = new Payment(studentId, -amount);
+        paymentDAO.save(p);
+    }
+}
+
+
+// ===============================================================
+// PART 5: SPRING CONFIGURATION (@Configuration)
+// ===============================================================
+
+@Configuration
+@EnableTransactionManagement
+@ComponentScan
+class AppConfig {
+
+    @Bean
+    public StudentDAO studentDAO() { return new StudentDAO(); }
+
+    @Bean
+    public CourseDAO courseDAO() { return new CourseDAO(); }
+
+    @Bean
+    public FeeService feeService() { return new FeeService(); }
+}
+
+
+// ===============================================================
+// PART 6: MAIN APPLICATION (Console Based Menu)
+// ===============================================================
+
+public class OnlineStudentManagementSystem {
+
+    public static void main(String[] args) {
+
+        AnnotationConfigApplicationContext ctx =
+                new AnnotationConfigApplicationContext(AppConfig.class);
+
+        StudentDAO sdao = ctx.getBean(StudentDAO.class);
+        CourseDAO cdao = ctx.getBean(CourseDAO.class);
+        FeeService fee = ctx.getBean(FeeService.class);
+
+        Scanner sc = new Scanner(System.in);
+
+        while (true) {
+            System.out.println("\n===== STUDENT MANAGEMENT SYSTEM =====");
+            System.out.println("1. Add Course");
+            System.out.println("2. Add Student");
+            System.out.println("3. View All Students");
+            System.out.println("4. Update Student Course");
+            System.out.println("5. Delete Student");
+            System.out.println("6. Pay Fee");
+            System.out.println("7. Refund Fee");
+            System.out.println("0. Exit");
+            System.out.print("Enter choice: ");
+            int ch = sc.nextInt();
+
+            switch (ch) {
+
+                case 1:
+                    System.out.print("Course Name: ");
+                    String cname = sc.next();
+                    System.out.print("Duration (weeks): ");
+                    int dur = sc.nextInt();
+                    cdao.save(new Course(cname, dur));
+                    System.out.println("Course Added!");
+                    break;
+
+                case 2:
+                    System.out.print("Student Name: ");
+                    String sname = sc.next();
+                    System.out.print("Course ID: ");
+                    int cid = sc.nextInt();
+                    Course c = cdao.get(cid);
+                    if (c == null) { System.out.println("Invalid Course!"); break; }
+                    System.out.print("Balance: ");
+                    double bal = sc.nextDouble();
+                    sdao.save(new Student(sname, c, bal));
+                    System.out.println("Student Added!");
+                    break;
+
+                case 3:
+                    sdao.getAll().forEach(System.out::println);
+                    break;
+
+                case 4:
+                    System.out.print("Student ID: ");
+                    int sid = sc.nextInt();
+                    System.out.print("New Course ID: ");
+                    int ncid = sc.nextInt();
+                    Student s = sdao.get(sid);
+                    Course nc = cdao.get(ncid);
+                    if (s != null && nc != null) {
+                        s.setCourse(nc);
+                        sdao.save(s);
+                        System.out.println("Updated!");
+                    } else System.out.println("Invalid Student/Course");
+                    break;
+
+                case 5:
+                    System.out.print("Student ID: ");
+                    sdao.delete(sc.nextInt());
+                    System.out.println("Deleted!");
+                    break;
+
+                case 6:
+                    System.out.print("Student ID: ");
+                    int sid2 = sc.nextInt();
+                    System.out.print("Amount: ");
+                    double amt = sc.nextDouble();
+                    try {
+                        fee.payFee(sid2, amt);
+                        System.out.println("Payment Successful!");
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    break;
+
+                case 7:
+                    System.out.print("Student ID: ");
+                    int sid3 = sc.nextInt();
+                    System.out.print("Refund Amount: ");
+                    double ramt = sc.nextDouble();
+                    try {
+                        fee.refundFee(sid3, ramt);
+                        System.out.println("Refund Successful!");
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                    }
+                    break;
+
+                case 0:
+                    System.out.println("Exiting...");
+                    ctx.close();
+                    return;
+
+                default:
+                    System.out.println("Invalid Choice!");
+            }
+        }
+    }
+}
