@@ -1,0 +1,32 @@
+import java.util.ArrayList;
+import java.util.Scanner;
+
+public class SumUsingAutoboxing {
+    public static void main(String[] args) {
+
+        Scanner sc = new Scanner(System.in);
+        ArrayList<Integer> numbers = new ArrayList<>();
+
+        System.out.print("Enter how many numbers you want to add: ");
+        int n = Integer.parseInt(sc.nextLine());  // String → int using parsing
+
+        // Input numbers as strings
+        for (int i = 0; i < n; i++) {
+            System.out.print("Enter number " + (i + 1) + ": ");
+            String input = sc.nextLine();
+
+            // parse string to int, autobox to Integer when added to ArrayList
+            numbers.add(Integer.parseInt(input));
+        }
+
+        int sum = 0;
+
+        // Enhanced for loop automatically unboxes Integer → int
+        for (Integer num : numbers) {
+            sum += num; // unboxing
+        }
+
+        System.out.println("\nTotal Sum = " + sum);
+        sc.close();
+    }
+}
