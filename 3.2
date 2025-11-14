@@ -1,0 +1,235 @@
+// --------------------------------------------------------
+// PART A: SPRING DEPENDENCY INJECTION (JAVA CONFIG)
+// --------------------------------------------------------
+
+import org.springframework.context.annotation.*;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.stereotype.Service;
+import jakarta.persistence.*;
+import org.hibernate.*;
+import org.hibernate.cfg.Configuration;
+
+// -----------------------
+// A.1 Course Class
+// -----------------------
+class Course {
+    public String getCourseName() {
+        return "Spring Framework Course";
+    }
+}
+
+// -----------------------
+// A.2 Student Class
+// -----------------------
+class Student {
+    private Course course;
+
+    public Student(Course course) {
+        this.course = course;
+    }
+
+    public void display() {
+        System.out.println("Student enrolled in: " + course.getCourseName());
+    }
+}
+
+// -----------------------
+// A.3 Spring Java Config
+// -----------------------
+@Configuration
+@EnableTransactionManagement
+@ComponentScan
+class AppConfig {
+
+    @Bean
+    public Course course() {
+        return new Course();
+    }
+
+    @Bean
+    public Student student() {
+        return new Student(course());
+    }
+}
+
+
+// --------------------------------------------------------
+// PART B: HIBERNATE STUDENT CRUD APPLICATION
+// --------------------------------------------------------
+
+// -----------------------
+// B.1 Hibernate Student Entity
+// -----------------------
+@Entity
+@Table(name = "students")
+class StudentEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;
+
+    @Column
+    private String name;
+    @Column
+    private String email;
+
+    public StudentEntity() {}
+
+    public StudentEntity(String name, String email) {
+        this.name = name;
+        this.email = email;
+    }
+
+    // setters + getters
+}
+
+// -----------------------
+// B.2 Hibernate Utility
+// -----------------------
+class HibernateUtil {
+    private static final SessionFactory sessionFactory;
+
+    static {
+        sessionFactory = new Configuration()
+                .configure()
+                .addAnnotatedClass(StudentEntity.class)
+                .addAnnotatedClass(Account.class)
+                .buildSessionFactory();
+    }
+
+    public static SessionFactory getSessionFactory() {
+        return sessionFactory;
+    }
+}
+
+// -----------------------
+// B.3 Student DAO
+// -----------------------
+class StudentDAO {
+
+    public void saveStudent(StudentEntity s) {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        Transaction tx = session.beginTransaction();
+        session.save(s);
+        tx.commit();
+        session.close();
+    }
+
+    public StudentEntity getStudent(int id) {
+        Session session = HibernateUtil.getSessionFactory().openSession();
+        StudentEntity s = session.get(StudentEntity.class, id);
+        session.close();
+        return s;
+    }
+}
+
+
+// --------------------------------------------------------
+// PART C: SPRING + HIBERNATE TRANSACTION MANAGEMENT
+// --------------------------------------------------------
+
+// -----------------------
+// C.1 Account Entity
+// -----------------------
+@Entity
+@Table(name = "accounts")
+class Account {
+
+    @Id
+    private int id;
+
+    @Column
+    private double balance;
+
+    public Account() {}
+    public Account(int id, double balance) {
+        this.id = id;
+        this.balance = balance;
+    }
+
+    // getters + setters
+}
+
+// -----------------------
+// C.2 Account DAO
+// -----------------------
+class AccountDAO {
+
+    public void update(Account a) {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        Transaction tx = s.beginTransaction();
+        s.update(a);
+        tx.commit();
+        s.close();
+    }
+
+    public Account get(int id) {
+        Session s = HibernateUtil.getSessionFactory().openSession();
+        Account a = s.get(Account.class, id);
+        s.close();
+        return a;
+    }
+}
+
+// -----------------------
+// C.3 Bank Service (Transactional)
+// -----------------------
+@Service
+class BankService {
+
+    private AccountDAO dao = new AccountDAO();
+
+    @Transactional
+    public void transferMoney(int fromAcc, int toAcc, double amount) {
+
+        Account a1 = dao.get(fromAcc);
+        Account a2 = dao.get(toAcc);
+
+        if (a1.getBalance() < amount)
+            throw new RuntimeException("Insufficient Funds!");
+
+        a1.setBalance(a1.getBalance() - amount);
+        a2.setBalance(a2.getBalance() + amount);
+
+        dao.update(a1);
+        dao.update(a2);
+    }
+}
+
+
+// --------------------------------------------------------
+// MAIN: RUN EVERYTHING TOGETHER
+// --------------------------------------------------------
+public class CombinedApp {
+
+    public static void main(String[] args) {
+
+        AnnotationConfigApplicationContext ctx =
+                new AnnotationConfigApplicationContext(AppConfig.class);
+
+        // PART A: SPRING DI
+        System.out.println("=== SPRING DI OUTPUT ===");
+        Student student = ctx.getBean(Student.class);
+        student.display();
+
+        // PART B: HIBERNATE CRUD
+        System.out.println("\n=== HIBERNATE CRUD OUTPUT ===");
+        StudentDAO dao = new StudentDAO();
+        dao.saveStudent(new StudentEntity("Raman", "raman@gmail.com"));
+        StudentEntity s = dao.getStudent(1);
+        System.out.println("Student fetched from DB: " + s);
+
+        // PART C: BANK TRANSACTION
+        System.out.println("\n=== SPRING + HIBERNATE TRANSACTION ===");
+        BankService bank = ctx.getBean(BankService.class);
+
+        try {
+            bank.transferMoney(1, 2, 500);
+            System.out.println("Transaction Successful!");
+        } catch (Exception e) {
+            System.out.println("Transaction Failed: " + e.getMessage());
+        }
+
+        ctx.close();
+    }
+}
